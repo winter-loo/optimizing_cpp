@@ -1,0 +1,48 @@
+# Justfile for C++ Benchmark Automation
+
+# Read FUNC environment variable, default to "1" if not set
+version := env_var_or_default("FUNC", "1")
+
+# Build directory
+build_dir := "build"
+
+# Default recipe: build and run benchmark
+default: bench
+
+# Configure the build with the specific FUNC version
+configure:
+    cmake -B {{build_dir}} -S . -DCMAKE_BUILD_TYPE=Release -DFUNC_VERSION={{version}}
+
+# Compile the executable
+build: configure
+    VERBOSE=ON cmake --build {{build_dir}} --config Release
+
+# Run the benchmark
+bench: build
+    @echo "Running benchmark for FUNC version {{version}}..."
+    ./{{build_dir}}/bench
+
+# Show disassembly of the Func function
+#   * `sed`: The stream editor tool.
+#   * `-n`: Tells sed not to print every line by default. We only want to print specific lines.
+#   * `'...'`: The single quotes contain the command script.
+#   * `/<start>/,/<end>/p`: This is a "range pattern". It performs the p (print) action for all lines
+#     starting from the first match of <start> until the first match of <end>.
+#       * Start Pattern (`/<Func(int\*, int&)>:/`): This regex looks for the specific line where the
+#         function starts.
+#           * Func(int*, int&) is the C++ function signature (after c++filt decodes it).
+#           * \ is used to escape the * character (which is special in regex).
+#           * : matches the colon that objdump puts after a symbol name.
+#       * End Pattern (`/^$/`): This regex looks for an empty line.
+#           * ^ means start of line.
+#           * $ means end of line.
+#           * objdump typically separates functions with blank lines, so this stops printing once the
+#             current function block ends.
+#       * `p`: The print command. It prints the lines falling within that range.
+disasm: build
+    @echo "Disassembling Func (Version {{version}})..."
+    objdump -d {{build_dir}}/CMakeFiles/bench.dir/main.cc.o | c++filt | sed -n '/<Func(int\*, int&)>:/,/^$/p'
+
+# Clean build artifacts
+clean:
+    rm -rf {{build_dir}}
